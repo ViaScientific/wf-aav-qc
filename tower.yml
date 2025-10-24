@@ -1,0 +1,3 @@
+reports:
+  wf-aav-qc-report.html:
+    display: "html"
