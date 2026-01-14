@@ -207,6 +207,7 @@ process map_to_combined_reference {
 process truncations {
     /*
     Filter alignments for those that start and end within the ITR-ITR cassette.
+    Provides severity categorization of truncations.
     */
     label "wf_aav"
     cpus 2
@@ -220,8 +221,8 @@ process truncations {
         val(itr_locs)
 
     output:
-        path('truncations.tsv'),
-        emit: locations
+        path('truncations.tsv'), emit: locations
+        path('truncation_severity.tsv'), emit: severity_summary
     script:
     """
     workflow-glue truncations \
@@ -229,10 +230,39 @@ process truncations {
         --itr_range $itr_locs.itr1_start $itr_locs.itr2_end \
         --transgene_plasmid_name "${transgene_plasmid_name}" \
         --outfile truncations.tsv \
+        --summary_outfile truncation_severity.tsv \
         --sample_id "$meta.alias"
     """
 }
 
+process length_statistics {
+    /*
+    Calculate read length statistics relative to expected AAV genome size.
+    Provides percentage-based binning to identify truncation patterns.
+    */
+    label "wf_aav"
+    cpus 2
+    memory "2 GB"
+
+    input:
+        tuple val(meta),
+              path("bam_info.tsv")
+        val(transgene_plasmid_name)
+
+    output:
+        path('length_statistics.tsv'), emit: length_stats
+
+    script:
+    """
+    workflow-glue length_statistics \
+        --bam_info bam_info.tsv \
+        --transgene_plasmid_name "${transgene_plasmid_name}" \
+        --sample_id "$meta.alias" \
+        --bin_size 500 \
+        --max_length 5000 \
+        --outfile length_statistics.tsv
+    """
+}
 
 process contamination {
     /*
@@ -263,6 +293,43 @@ process contamination {
     """
 }
 
+process recombination {
+    /*
+    Detect inter-plasmid recombination events.
+    Identifies reads with alignments to multiple different reference plasmids.
+    Uses ref_ids.json for accurate categorization and applies minimum alignment
+    length thresholds to reduce false positives from short spurious alignments.
+    */
+    label "wf_aav"
+    cpus 2
+    memory "2 GB"
+
+    input:
+        tuple val(meta),
+              path("bam_info.tsv")
+        path("ref_ids.json")
+        val(transgene_plasmid_name)
+        val(itr_locs)
+
+    output:
+        path('recombination_events.tsv'), emit: events
+        path('recombination_summary.tsv'), emit: summary
+
+    script:
+        def itr_range = (itr_locs && itr_locs.itr1_start != null && itr_locs.itr2_end != null) ? "--itr_range ${itr_locs.itr1_start} ${itr_locs.itr2_end}" : ""
+    """
+    workflow-glue recombination \\
+        --bam_info bam_info.tsv \\
+        --ref_ids_json ref_ids.json \\
+        --transgene_plasmid_name "${transgene_plasmid_name}" \\
+        --sample_id "$meta.alias" \\
+        ${itr_range} \\
+        --min_alignment_length 200 \\
+        --min_host_alignment_length 500 \\
+        --outfile recombination_events.tsv \\
+        --summary_outfile recombination_summary.tsv
+    """
+}
 
 process aav_structures {
     label "wf_aav"
@@ -412,8 +479,11 @@ process makeReport {
         val metadata
         path stats, stageAs: "stats_*"
         path 'truncations.tsv'
+        path 'truncation_severity.tsv'
         path 'itr_coverage.tsv'
+        path 'length_statistics.tsv'
         path 'contam_class_counts.tsv'
+        path 'recombination_summary.tsv'
         path 'structure_counts.tsv'
         path "versions/*"
         path "params.json"
@@ -432,8 +502,11 @@ process makeReport {
         --params params.json \
         --metadata metadata.json \
         --truncations truncations.tsv \
+        --truncation_severity truncation_severity.tsv \
         --itr_coverage itr_coverage.tsv \
+        --length_statistics length_statistics.tsv \
         --contam_class_counts contam_class_counts.tsv \
+        --recombination_summary recombination_summary.tsv \
         --aav_structures structure_counts.tsv
     """
 }
@@ -515,11 +588,23 @@ workflow pipeline {
             itr_locs
         )
 
+        length_statistics(
+            map_to_combined_reference.out.bam_info,
+            transgene_plasmid_name
+        )
+
         contamination(
             map_to_combined_reference.out.bam_info
                 | join(samples.map {meta, fastq, stats -> [meta, stats]}),
                ref_transgene_plasmid,
                make_combined_reference.out.ref_ids_json.first()
+        )
+
+        recombination(
+            map_to_combined_reference.out.bam_info,
+            make_combined_reference.out.ref_ids_json.first(),
+            transgene_plasmid_name,
+            itr_locs
         )
 
         aav_structures(
@@ -567,8 +652,11 @@ workflow pipeline {
             metadata,
             stats,
             truncations.out.locations.collectFile(keepHeader: true),
+            truncations.out.severity_summary.collectFile(keepHeader: true),
             itr_coverage.out.collectFile(keepHeader: true),
+            length_statistics.out.length_stats.collectFile(keepHeader: true),
             contamination.out.contam_class_counts.collectFile(keepHeader: true),
+            recombination.out.summary.collectFile(keepHeader: true),
             aav_structures.out.structure_counts.collectFile(keepHeader: true),
             software_versions.collect(),
             workflow_params,

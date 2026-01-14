@@ -48,6 +48,134 @@ def plot_trucations(report, truncations_file):
                     EZChart(plt, theme='epi2melabs')
 
 
+def plot_truncation_severity(report, severity_file):
+    """Make report section with truncation severity breakdown.
+    
+    Shows categorization of reads by truncation severity.
+    """
+    df = pd.read_csv(
+        severity_file,
+        sep='\t',
+        dtype={
+            'severity': str,
+            'count': np.int64,
+            'percentage': np.float64,
+            'sample_id': str
+        }
+    )
+
+    # Define severity order for display
+    severity_order = [
+        "Full length (≥90%)",
+        "Minor truncation (75-90%)",
+        "Moderate truncation (50-75%)",
+        "Severe truncation (25-50%)",
+        "Very severe truncation (<25%)"
+    ]
+
+    with report.add_section("Truncation Severity", "Severity"):
+        p(
+            "This shows the breakdown of reads by truncation severity. "
+            "'Full length' reads cover ≥90% of the expected AAV genome size."
+        )
+        tabs = Tabs()
+        with tabs.add_dropdown_menu():
+
+            for sample, df_sample in df.groupby('sample_id'):
+                with tabs.add_dropdown_tab(sample):
+                    # Sort by severity order
+                    df_sample = df_sample.copy()
+                    df_sample['severity'] = pd.Categorical(
+                        df_sample['severity'], categories=severity_order, ordered=True)
+                    df_sample = df_sample.sort_values('severity')
+
+                    with Grid(columns=2):
+                        # Pie chart of severity distribution
+                        if not df_sample.empty and df_sample['count'].sum() > 0:
+                            # Filter out zero counts for pie chart
+                            df_nonzero = df_sample[df_sample['count'] > 0]
+                            plt = ezc.barplot(
+                                data=df_nonzero, x='severity', y='percentage')
+                            plt.title = dict(text='Truncation Severity Distribution')
+                            plt._fig.xaxis.major_label_orientation = 45 * (math.pi / 180)
+                            plt._fig.yaxis.axis_label = 'Percentage of reads'
+                            EZChart(plt, theme='epi2melabs', height='400px')
+
+                        # Paginated table with counts
+                        df_display = df_sample[['severity', 'count', 'percentage']].copy()
+                        df_display.columns = ['Severity Category', 'Count', 'Percentage (%)']
+                        DataTable.from_pandas(df_display, use_index=False)
+
+
+def plot_length_statistics(report, length_stats_file):
+    """Make report section with read alignment length distribution.
+    
+    Shows histogram of alignment lengths in base pairs for all transgene-mapped reads.
+    """
+    df = pd.read_csv(
+        length_stats_file,
+        sep='\t',
+        dtype={
+            'bin': str,
+            'count': np.int64,
+            'percentage': np.float64,
+            'sample_id': str
+        }
+    )
+
+    with report.add_section("Read Length Distribution", "Length Stats"):
+        p(
+            "This shows the distribution of alignment lengths (in base pairs) for all reads "
+            "mapping to the transgene plasmid. This provides the raw size distribution of "
+            "sequenced molecules, independent of completeness calculations."
+        )
+        tabs = Tabs()
+        with tabs.add_dropdown_menu():
+
+            for sample, df_sample in df.groupby('sample_id'):
+                with tabs.add_dropdown_tab(sample):
+                    # Separate summary stats from bin data
+                    stats_rows = ['SUMMARY', 'mean_length_bp', 'median_length_bp', 
+                                  'min_length_bp', 'max_length_bp']
+                    df_bins = df_sample[~df_sample['bin'].isin(stats_rows)].copy()
+                    df_stats = df_sample[df_sample['bin'].isin(stats_rows)].copy()
+
+                    # Extract and display key statistics
+                    if not df_stats.empty:
+                        summary_row = df_stats[df_stats['bin'] == 'SUMMARY']
+                        mean_row = df_stats[df_stats['bin'] == 'mean_length_bp']
+                        median_row = df_stats[df_stats['bin'] == 'median_length_bp']
+                        
+                        if not summary_row.empty:
+                            total = int(summary_row['count'].values[0])
+                            p(f"Total reads: {total:,}")
+                        if not mean_row.empty:
+                            mean_len = int(mean_row['percentage'].values[0])
+                            p(f"Mean alignment length: {mean_len:,} bp")
+                        if not median_row.empty:
+                            median_len = int(median_row['percentage'].values[0])
+                            p(f"Median alignment length: {median_len:,} bp")
+
+                    # Plot histogram - only bins with at least 1 read
+                    with Grid(columns=2):
+                        # Filter to non-empty bins only
+                        df_bins_nonzero = df_bins[df_bins['count'] > 0].copy()
+                        
+                        if not df_bins_nonzero.empty:
+                            plt = ezc.barplot(
+                                data=df_bins_nonzero, x='bin', y='percentage')
+                            plt.title = dict(text='Alignment Length Distribution')
+                            plt._fig.xaxis.major_label_orientation = 45 * (math.pi / 180)
+                            plt._fig.xaxis.axis_label = 'Alignment length (bp)'
+                            plt._fig.yaxis.axis_label = 'Percentage of reads'
+                            EZChart(plt, theme='epi2melabs', height='400px')
+
+                        # Display bin counts table (only non-empty bins)
+                        df_bins_display = df_bins_nonzero[['bin', 'count', 'percentage']].copy()
+                        df_bins_display.columns = ['Length Bin', 'Count', 'Percentage (%)']
+                        DataTable.from_pandas(df_bins_display, use_index=False)
+
+
 def plot_itr_coverage(report, coverage_file):
     """Make report section with ITR-ITR coverage of transgene cassette region."""
     df = pd.read_csv(
@@ -143,6 +271,110 @@ def plot_contamination(report, class_counts):
                         EZChart(plt, theme='epi2melabs', height='400px')
 
 
+def plot_recombination(report, recomb_summary_file):
+    """Make report section showing inter-plasmid recombination events.
+    
+    Shows counts of reads with alignments to multiple different reference plasmids.
+    Includes explanatory text about filtering and backbone artifacts.
+    """
+    df = pd.read_csv(
+        recomb_summary_file,
+        sep='\t',
+        dtype={
+            'recombination_type': str,
+            'count': np.int64,
+            'percentage': np.float64,
+            'sample_id': str
+        }
+    )
+    
+    with report.add_section("Recombination Events", "Recombination"):
+        p(
+            "This section identifies potential inter-plasmid recombination events - "
+            "reads with valid alignments to multiple different reference plasmids."
+        )
+        p(
+            "Filtering applied: Transgene alignments are restricted to the ITR-ITR "
+            "cassette region. Helper/RepCap plasmids require ≥200bp alignments. "
+            "Host genome requires ≥500bp alignments to reduce false positives from "
+            "short spurious matches."
+        )
+        p(
+            "Note: 'helper_repcap_only' events (without transgene involvement) are "
+            "typically artifacts from shared plasmid backbone sequences (e.g., AmpR, "
+            "pUC origin) and usually do not indicate quality issues with the transgene "
+            "product. These are reported separately from true recombination events."
+        )
+        
+        tabs = Tabs()
+        with tabs.add_dropdown_menu():
+
+            for sample, df_sample in df.groupby('sample_id'):
+                with tabs.add_dropdown_tab(sample):
+                    # Get summary stats
+                    total_row = df_sample[
+                        df_sample['recombination_type'] == 'total_recombination_events'
+                    ]
+                    backbone_row = df_sample[
+                        df_sample['recombination_type'] == 'total_backbone_only_events'
+                    ]
+                    
+                    if not total_row.empty:
+                        total_pct = total_row['percentage'].values[0]
+                        total_count = total_row['count'].values[0]
+                        p(f"Transgene recombination events: {total_count:,} reads ({total_pct:.2f}%)")
+                    
+                    if not backbone_row.empty:
+                        bb_pct = backbone_row['percentage'].values[0]
+                        bb_count = backbone_row['count'].values[0]
+                        if bb_count > 0:
+                            p(f"Backbone-only events (helper+repcap, no transgene): "
+                              f"{bb_count:,} reads ({bb_pct:.2f}%) - likely artifacts")
+                    
+                    # Filter to show recombination types only (not summary rows)
+                    df_types = df_sample[
+                        ~df_sample['recombination_type'].isin([
+                            'total_recombination_events',
+                            'total_backbone_only_events',
+                            'no_inter_plasmid_recombination'
+                        ])
+                    ].copy()
+                    
+                    with Grid(columns=2):
+                        # Bar plot of recombination types
+                        if not df_types.empty and df_types['count'].sum() > 0:
+                            df_nonzero = df_types[df_types['count'] > 0]
+                            if not df_nonzero.empty:
+                                # Shorten labels for display
+                                df_nonzero = df_nonzero.copy()
+                                df_nonzero['type_short'] = df_nonzero['recombination_type'].str.replace(
+                                    '_recombination', '').str.replace('_', '+')
+                                plt = ezc.barplot(
+                                    data=df_nonzero, x='type_short', y='count')
+                                plt.title = dict(text='Recombination Types')
+                                plt._fig.xaxis.major_label_orientation = 45 * (math.pi / 180)
+                                plt._fig.yaxis.axis_label = 'Number of reads'
+                                EZChart(plt, theme='epi2melabs', height='400px')
+                        else:
+                            # No recombination events - show the "no recombination" bar
+                            no_recomb_row = df_sample[
+                                df_sample['recombination_type'] == 'no_inter_plasmid_recombination'
+                            ]
+                            if not no_recomb_row.empty:
+                                df_plot = no_recomb_row.copy()
+                                df_plot['type_short'] = 'no_recombination'
+                                plt = ezc.barplot(
+                                    data=df_plot, x='type_short', y='count')
+                                plt.title = dict(text='Recombination Types')
+                                plt._fig.yaxis.axis_label = 'Number of reads'
+                                EZChart(plt, theme='epi2melabs', height='400px')
+                        
+                        # Paginated table
+                        df_display = df_sample[['recombination_type', 'count', 'percentage']].copy()
+                        df_display.columns = ['Type', 'Count', 'Percentage (%)']
+                        DataTable.from_pandas(df_display, use_index=False)
+
+
 def plot_aav_structures(report, structures_file):
     """Make report section barplots detailing the AAV structures found."""
     df = pd.read_csv(
@@ -220,7 +452,10 @@ def main(args):
         report,
         args.contam_class_counts)
     plot_trucations(report, args.truncations)
+    plot_truncation_severity(report, args.truncation_severity)
+    plot_length_statistics(report, args.length_statistics)
     plot_itr_coverage(report, args.itr_coverage)
+    plot_recombination(report, args.recombination_summary)
     plot_aav_structures(report, args.aav_structures)
 
     with report.add_section("Metadata", "Metadata"):
@@ -248,9 +483,15 @@ def argparser():
     parser.add_argument(
         "--truncations", help="TSV with start and end columns for.")
     parser.add_argument(
+        "--truncation_severity", help="TSV with truncation severity summary.")
+    parser.add_argument(
+        "--length_statistics", help="TSV with read length completeness statistics.")
+    parser.add_argument(
         "--itr_coverage", help="TSV with alignment Pos and EndPos columns.")
     parser.add_argument(
         "--contam_class_counts", help="TSV of reference mapping counts.")
+    parser.add_argument(
+        "--recombination_summary", help="TSV with recombination event summary.")
     parser.add_argument(
         "--aav_structures", help="TSV of reads with AAV structure assignment.")
     parser.add_argument(
