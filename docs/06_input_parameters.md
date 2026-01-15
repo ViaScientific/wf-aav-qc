@@ -32,7 +32,7 @@
 
 | Nextflow parameter name  | Type | Description | Help | Default |
 |--------------------------|------|-------------|------|---------|
-| out_dir | string | Directory for output of all workflow results. |  | output |
+| outdir | string | Directory for output of all workflow results. |  | output |
 | output_genometype_bams | boolean | If true, output a BAM file per identified AAV genome structure type. Otherwise output a BAM file per sample. | Output individual BAM files by the assigned genome type. | False |
 | igv | boolean | Enable IGV visualisation in the EPI2ME Desktop Application by creating the required files. |  | False |
 

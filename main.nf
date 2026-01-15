@@ -535,7 +535,7 @@ process output {
     cpus 2
     memory "2 GB"
     publishDir (
-        params.out_dir,
+        params.outdir,
         mode: "copy",
         saveAs: { dirname ? "$dirname/$fname" : fname }
     )
