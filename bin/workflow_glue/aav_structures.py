@@ -583,4 +583,3 @@ def main(args):
                     .alias('percentage'))
             )
             final_summary.write_csv(args.output_plot_data, separator='\t')
-asdf
