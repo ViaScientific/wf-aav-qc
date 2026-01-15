@@ -270,7 +270,6 @@ def plot_contamination(report, class_counts):
                         plt.title = dict(text='Alignment counts per target')
                         EZChart(plt, theme='epi2melabs', height='400px')
 
-
 def plot_recombination(report, recomb_summary_file):
     """Make report section showing inter-plasmid recombination events.
     
@@ -488,6 +487,8 @@ def argparser():
         "--length_statistics", help="TSV with read length completeness statistics.")
     parser.add_argument(
         "--itr_coverage", help="TSV with alignment Pos and EndPos columns.")
+
+
     parser.add_argument(
         "--contam_class_counts", help="TSV of reference mapping counts.")
     parser.add_argument(

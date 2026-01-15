@@ -2,7 +2,7 @@
 Identify truncation hotspots.
 
 Create a CSV file containing start and end locations for alignments fully contained
-within the ITR-ITR region.
+within the ITR-ITR region. Also provides severity categorization of truncations.
 """
 
 from pathlib import Path
@@ -32,7 +32,7 @@ def argparser():
         help="sample ID")
     parser.add_argument(
         '--outfile',
-        help="Path to output",
+        help="Path to output positions TSV",
         type=Path)
     parser.add_argument(
         '--summary_outfile',
@@ -121,11 +121,12 @@ def main(args):
             df_bam = df_bam.loc[df_bam.Ref.isin([args.transgene_plasmid_name])].copy()
 
             # Filter for alignments that start and end within the ITR-ITR region
+            # Using 3bp tolerance as in the original pipeline
             df_bam = df_bam.loc[
                 (df_bam.Pos > itr1_start_pos - 3) &
                 (df_bam.EndPos < itr2_end_pos + 3)
             ].copy()
-
+            
             if not df_bam.empty:
                 # Keep Read, Pos, EndPos for interval merging later
                 loaded_dataframes.append(df_bam[['Read', 'Pos', 'EndPos']])
@@ -200,4 +201,3 @@ def main(args):
         df_summary['sample_id'] = args.sample_id
         
         df_summary.to_csv(args.summary_outfile, sep='\t', index=False)
-
