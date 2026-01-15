@@ -1,4 +1,4 @@
-# AAV QC workflow
+# AAV Quality Control
 
 QC of recombinant adeno-associated viral vector (rAAV) preparations.
 
@@ -25,17 +25,17 @@ does some basic quality control checks. The main stages of the workflow are:
 
 Recommended requirements:
 
-+ CPUs = 8
++ CPUs = 16
 + Memory = 32GB
 
 Minimum requirements:
 
-+ CPUs = 4
++ CPUs = 8
 + Memory = 16GB
 
 Approximate run time: 15 minutes per sample - 150k reads and 8 cpus
 
-ARM processor support: False
+ARM processor support: True
 
 
 
@@ -90,7 +90,7 @@ tar -xzvf wf-aav-qc-demo.tar.gz
 The workflow can then be run with the downloaded demo data using:
 ```
 nextflow run epi2me-labs/wf-aav-qc \
-	--fastq 'wf-aav-qc-demo/simulated_reads.fq' \
+	--fastq 'wf-aav-qc-demo/fastq' \
 	--itr1_end 156 \
 	--itr1_start 11 \
 	--itr2_end 2286 \
@@ -137,102 +137,6 @@ input_reads.fastq   ─── input_directory  ─── input_directory
                                              └── barcode03
                                               └── reads0.fastq
 ```
-
-
-
-## Input parameters
-
-### Input Options
-
-| Nextflow parameter name  | Type | Description | Help | Default |
-|--------------------------|------|-------------|------|---------|
-| fastq | string | FASTQ files to use in the analysis. | This accepts one of three cases: (i) the path to a single FASTQ file; (ii) the path to a top-level directory containing FASTQ files; (iii) the path to a directory containing one level of sub-directories which in turn contain FASTQ files. In the first and second case, a sample name can be supplied with `--sample`. In the last case, the data is assumed to be multiplexed with the names of the sub-directories as barcodes. In this case, a sample sheet can be provided with `--sample_sheet`. |  |
-| bam | string | BAM or unaligned BAM (uBAM) files to use in the analysis. | This accepts one of three cases: (i) the path to a single BAM file; (ii) the path to a top-level directory containing BAM files; (iii) the path to a directory containing one level of sub-directories which in turn contain BAM files. In the first and second case, a sample name can be supplied with `--sample`. In the last case, the data is assumed to be multiplexed with the names of the sub-directories as barcodes. In this case, a sample sheet can be provided with `--sample_sheet`. |  |
-| analyse_unclassified | boolean | Analyse unclassified reads from input directory. By default the workflow will not process reads in the unclassified directory. | If selected and if the input is a multiplex directory the workflow will also process the unclassified directory. | False |
-| transgene_bed | string | A BED file describing transgene plasmid feature locations. | A BED file with columns (1) plasmid_name (eg 'transgene_plasmid'); (2) feature start; (3) feature end; (4) feature name. If used, this file must minimally contain two rows; one for ITR1 and another for ITR2.The feature name must be ITR1 or ITR2 <br> Example row (separated by tabs): ```aav8    11      156     ITR1```  |  |
-| itr_fl_threshold | integer | The maximum number of bases missing from an ITR in order for it to be classed as a full length ITR. | For ITR1, this many bases can be missing from the end of the ITR region. For ITR2, this many bases can be missing from the start of the ITR region. | 100 |
-| itr_backbone_threshold | integer | The maximum number of bases and alignment is allowed to extended outside of the ITR-ITR region for an associated read to not be classed as `backbone`. | Reads mapping to the transgene plasmid sometimes extend beyond the ITRs. This parameter sets a maximum number or bases after which the read is classified as `backbone`. | 20 |
-| itr1_start | integer | The start position of ITR1. |  |  |
-| itr1_end | integer | The end position of ITR2. |  |  |
-| itr2_start | integer | The start position of ITR2. |  |  |
-| itr2_end | integer | The end position of ITR2. |  |  |
-| symmetry_threshold | integer | The threshold to consider whether the start or end positions on opposite strands are classed as symmetrical or asymmetrical. | For certain categories of AAV genome type we want to test whether alignments on both strands are symmetrical or asymmetrical (i.e. whether the start and end positions are approximately the same or not) This parameter sets the threshold for this comparison. | 10 |
-| ref_host | string | The reference FASTA file for the host organism (.fasta/fasta.gz). |  |  |
-| ref_helper | string | The helper plasmid FASTA file. |  |  |
-| ref_rep_cap | string | The rep/cap plasmid FASTA file. |  |  |
-| non_transgene_refs | string | A path to a folder containing reference sequences for all non-transgene plasmid sequences. |  |  |
-| ref_transgene_plasmid | string | The transgene plasmid FASTA file. |  |  |
-
-
-### Sample Options
-
-| Nextflow parameter name  | Type | Description | Help | Default |
-|--------------------------|------|-------------|------|---------|
-| sample_sheet | string | A CSV file used to map barcodes to sample aliases. The sample sheet can be provided when the input data is a directory containing sub-directories with FASTQ files. | The sample sheet is a CSV file with, minimally, columns named `barcode` and `alias`. Extra columns are allowed. A `type` column is required for certain workflows and should have the following values; `test_sample`, `positive_control`, `negative_control`, `no_template_control`. |  |
-| sample | string | A single sample name for non-multiplexed data. Permissible if passing a single .fastq(.gz) file or directory of .fastq(.gz) files. |  |  |
-
-
-### Output Options
-
-| Nextflow parameter name  | Type | Description | Help | Default |
-|--------------------------|------|-------------|------|---------|
-| out_dir | string | Directory for output of all workflow results. |  | output |
-| output_genometype_bams | boolean | If true, output a BAM file per identified AAV genome structure type. Otherwise output a BAM file per sample. | Output individual BAM files by the assigned genome type. | False |
-| igv | boolean | Enable IGV visualisation in the EPI2ME Desktop Application by creating the required files. |  | False |
-
-
-### Advanced Options
-
-| Nextflow parameter name  | Type | Description | Help | Default |
-|--------------------------|------|-------------|------|---------|
-| override_basecaller_cfg | string | Override auto-detected basecaller model that processed the signal data; used to select an appropriate Medaka model. | Per default, the workflow tries to determine the basecall model from the input data. This parameter can be used to override the detected value (or to provide a model name if none was found in the inputs). However, users should only do this if they know for certain which model was used as selecting the wrong option might give sub-optimal results. A list of recent models can be found here: https://github.com/nanoporetech/dorado#DNA-models. |  |
-
-
-### Miscellaneous Options
-
-| Nextflow parameter name  | Type | Description | Help | Default |
-|--------------------------|------|-------------|------|---------|
-| threads | integer | Maximum number of CPU threads for a process to consume. Applies to the minimap2 mapping and the AAV structure determination stages. | A minimap2 and AAV structure determination process per sample will be will be run. This setting applies a maximum number of threads to be used for each of these. | 4 |
-
-
-
-
-
-
-## Outputs
-
-Output files may be aggregated including information for all samples or provided per sample. Per-sample files will be prefixed with respective aliases and represented below as {{ alias }}.
-
-| Title | File path | Description | Per sample or aggregated |
-|-------|-----------|-------------|--------------------------|
-| Workflow report | wf-aav-qc-report.html | Report for all samples | aggregated |
-| Combined reference sequence | combined_reference.fa.gz | Reference file containing all AAV plasmid and host genome sequences. | aggregated |
-| Combined reference sequence index | combined_reference.fa.gz.fai | Index file for combined reference FASTA. | aggregated |
-| Compressed combined reference sequence index | combined_reference.fa.gz.gzi | Extra index file for combined reference FASTA (required because combined reference is bgzip-compressed). | aggregated |
-| Per read alignment info | {{ alias }}/{{ alias }}_bam_info.tsv | The result of `seqkit bam`. | per-sample |
-| AAV structure assignment | {{ alias }}/{{ alias }}_aav_per_read_info.tsv | AAV per read genome subtypes. | per-sample |
-| Transgene plasmid consensus | {{ alias }}/{{ alias }}_transgene_plasmid_consensus.fasta.gz | The transgene plasmid consensus sequence generated by medaka. | per-sample |
-| Transgene plasmid variants | {{ alias }}/{{ alias }}_transgene_plasmid_variants.vcf.gz | The transgene plasmid variants file generated by medaka. | per-sample |
-| Alignment file | {{ alias }}/tagged_bams/sorted.tagged.bam | The resulting tagged BAM file from mapping reads to the combined reference. | per-sample |
-| Alignment index file | {{ alias }}/tagged_bams/sorted.tagged.bam.bai | The index for the resulting tagged BAM file from mapping reads to the combined reference. | per-sample |
-| backbone_contamination alignment | {{ alias }}/tagged_bams/backbone_contamination.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: backbone_contamination | per-sample |
-| backbone_contamination alignment index | {{ alias }}/tagged_bams/backbone_contamination.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: backbone_contamination | per-sample |
-| full_ssaav alignment | {{ alias }}/tagged_bams/full_ssaav.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: full_ssaav | per-sample |
-| full_ssaav alignment index | {{ alias }}/tagged_bams/full_ssaav.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: full_ssaav | per-sample |
-| partial_ssaav alignment | {{ alias }}/tagged_bams/partial_ssaav.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: partial_ssaav | per-sample |
-| partial_ssaav alignment index | {{ alias }}/tagged_bams/partial_ssaav.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: partial_ssaav | per-sample |
-| full_scaav alignment | {{ alias }}/tagged_bams/full_scaav.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: full_scaav | per-sample |
-| full_scaav alignment index | {{ alias }}/tagged_bams/full_scaav.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: full_scaav | per-sample |
-| itr_region_only alignment | {{ alias }}/tagged_bams/itr_region_only.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: itr_region_only | per-sample |
-| itr_region_only alignment index | {{ alias }}/tagged_bams/itr_region_only.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: itr_region_only | per-sample |
-| complex alignment | {{ alias }}/tagged_bams/complex.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: complex | per-sample |
-| complex alignment index | {{ alias }}/tagged_bams/complex.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: complex | per-sample |
-| partial_scaav alignment | {{ alias }}/tagged_bams/partial_scaav.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: partial_scaav | per-sample |
-| partial_scaav alignment index | {{ alias }}/tagged_bams/partial_scaav.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: partial_scaav | per-sample |
-| unknown alignment | {{ alias }}/tagged_bams/unknown.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: unknown | per-sample |
-| unknown alignment index | {{ alias }}/tagged_bams/unknown.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: unknown | per-sample |
-| IGV config JSON file | igv.json | JSON file with IGV config options to be used by the EPI2ME Desktop Application. | aggregated |
-
 
 
 
@@ -325,9 +229,107 @@ There are two user-adjustable parameters relevant to this part of the workflow:
 
 See the [AAV structures](#aav-structure-diagrams) section for some representative diagrams of AAV gene structures and how they are classified.
 
-At this stage, the BAM alignment files are tagged with `AV:Z` which associates each alignment with an assigned genotype, in the format `AV:Z:full_ssaav`.
+At this stage, the BAM alignment files are tagged with `AV:Z` which associates each alignment with an assigned genotype, in the format `AV:Z:full_ssaav`. If the read does not map to the transgene plasmid, it will be assigned the tag `AV:Z:non_transgene`.
 
 If --gtype_bams is set to `true`, these tagged BAMs are split on this tag into separate BAM files.
+
+
+
+## Input parameters
+
+### Input Options
+
+| Nextflow parameter name  | Type | Description | Help | Default |
+|--------------------------|------|-------------|------|---------|
+| fastq | string | FASTQ files to use in the analysis. | This accepts one of three cases: (i) the path to a single FASTQ file; (ii) the path to a top-level directory containing FASTQ files; (iii) the path to a directory containing one level of sub-directories which in turn contain FASTQ files. In the first and second case, a sample name can be supplied with `--sample`. In the last case, the data is assumed to be multiplexed with the names of the sub-directories as barcodes. In this case, a sample sheet can be provided with `--sample_sheet`. |  |
+| bam | string | BAM or unaligned BAM (uBAM) files to use in the analysis. | This accepts one of three cases: (i) the path to a single BAM file; (ii) the path to a top-level directory containing BAM files; (iii) the path to a directory containing one level of sub-directories which in turn contain BAM files. In the first and second case, a sample name can be supplied with `--sample`. In the last case, the data is assumed to be multiplexed with the names of the sub-directories as barcodes. In this case, a sample sheet can be provided with `--sample_sheet`. |  |
+| analyse_unclassified | boolean | Analyse unclassified reads from input directory. By default the workflow will not process reads in the unclassified directory. | If selected and if the input is a multiplex directory the workflow will also process the unclassified directory. | False |
+| transgene_bed | string | A BED file describing transgene plasmid feature locations. | A BED file with columns (1) plasmid_name (eg 'transgene_plasmid'); (2) feature start; (3) feature end; (4) feature name. If used, this file must minimally contain two rows; one for ITR1 and another for ITR2.The feature name must be ITR1 or ITR2 <br> Example row (separated by tabs): ```aav8    11      156     ITR1```  |  |
+| itr_fl_threshold | integer | The maximum number of bases missing from an ITR in order for it to be classed as a full length ITR. | For ITR1, this many bases can be missing from the end of the ITR region. For ITR2, this many bases can be missing from the start of the ITR region. | 100 |
+| itr_backbone_threshold | integer | The maximum number of bases and alignment is allowed to extended outside of the ITR-ITR region for an associated read to not be classed as `backbone`. | Reads mapping to the transgene plasmid sometimes extend beyond the ITRs. This parameter sets a maximum number or bases after which the read is classified as `backbone`. | 20 |
+| itr1_start | integer | The start position of ITR1. |  |  |
+| itr1_end | integer | The end position of ITR1. |  |  |
+| itr2_start | integer | The start position of ITR2. |  |  |
+| itr2_end | integer | The end position of ITR2. |  |  |
+| symmetry_threshold | integer | The threshold to consider whether the start or end positions on opposite strands are classed as symmetrical or asymmetrical. | For certain categories of AAV genome type we want to test whether alignments on both strands are symmetrical or asymmetrical (i.e. whether the start and end positions are approximately the same or not) This parameter sets the threshold for this comparison. | 10 |
+| ref_host | string | The reference FASTA file for the host organism (.fasta/fasta.gz). |  |  |
+| ref_helper | string | The helper plasmid FASTA file. |  |  |
+| ref_rep_cap | string | The rep/cap plasmid FASTA file. |  |  |
+| non_transgene_refs | string | A path to a folder containing reference sequences for all non-transgene plasmid sequences. |  |  |
+| ref_transgene_plasmid | string | The transgene plasmid FASTA file. |  |  |
+
+
+### Sample Options
+
+| Nextflow parameter name  | Type | Description | Help | Default |
+|--------------------------|------|-------------|------|---------|
+| sample_sheet | string | A CSV file used to map barcodes to sample aliases. The sample sheet can be provided when the input data is a directory containing sub-directories with FASTQ files. | The sample sheet is a CSV file with, minimally, columns named `barcode` and `alias`. Extra columns are allowed. A `type` column is required for certain workflows and should have the following values; `test_sample`, `positive_control`, `negative_control`, `no_template_control`. |  |
+| sample | string | A single sample name for non-multiplexed data. Permissible if passing a single .fastq(.gz) file or directory of .fastq(.gz) files. |  |  |
+
+
+### Output Options
+
+| Nextflow parameter name  | Type | Description | Help | Default |
+|--------------------------|------|-------------|------|---------|
+| out_dir | string | Directory for output of all workflow results. |  | output |
+| output_genometype_bams | boolean | If true, output a BAM file per identified AAV genome structure type. Otherwise output a BAM file per sample. | Output individual BAM files by the assigned genome type. | False |
+| igv | boolean | Enable IGV visualisation in the EPI2ME Desktop Application by creating the required files. |  | False |
+
+
+### Advanced Options
+
+| Nextflow parameter name  | Type | Description | Help | Default |
+|--------------------------|------|-------------|------|---------|
+| override_basecaller_cfg | string | Override auto-detected basecaller model that processed the signal data; used to select an appropriate Medaka model. | Per default, the workflow tries to determine the basecall model from the input data. This parameter can be used to override the detected value (or to provide a model name if none was found in the inputs). However, users should only do this if they know for certain which model was used as selecting the wrong option might give sub-optimal results. A list of recent models can be found [here](https://software-docs.nanoporetech.com/dorado/latest/models/list/). |  |
+
+
+### Miscellaneous Options
+
+| Nextflow parameter name  | Type | Description | Help | Default |
+|--------------------------|------|-------------|------|---------|
+| threads | integer | Maximum number of CPU threads for a process to consume. Applies to the minimap2 mapping and the AAV structure determination stages. | A minimap2 and AAV structure determination process per sample will be will be run. This setting applies a maximum number of threads to be used for each of these. | 8 |
+
+
+
+
+
+
+## Outputs
+
+Output files may be aggregated including information for all samples or provided per sample. Per-sample files will be prefixed with respective aliases and represented below as {{ alias }}.
+
+| Title | File path | Description | Per sample or aggregated |
+|-------|-----------|-------------|--------------------------|
+| Workflow report | wf-aav-qc-report.html | Report for all samples | aggregated |
+| Combined reference sequence | combined_reference.fa.gz | Reference file containing all AAV plasmid and host genome sequences. | aggregated |
+| Combined reference sequence index | combined_reference.fa.gz.fai | Index file for combined reference FASTA. | aggregated |
+| Compressed combined reference sequence index | combined_reference.fa.gz.gzi | Extra index file for combined reference FASTA (required because combined reference is bgzip-compressed). | aggregated |
+| Per read alignment info | {{ alias }}/{{ alias }}_bam_info.tsv | The result of `seqkit bam`. | per-sample |
+| AAV structure assignment | {{ alias }}/{{ alias }}_aav_per_read_info.tsv | AAV per read genome subtypes. | per-sample |
+| Transgene plasmid consensus | {{ alias }}/{{ alias }}_transgene_plasmid_consensus.fasta.gz | The transgene plasmid consensus sequence generated by medaka. | per-sample |
+| Transgene plasmid variants | {{ alias }}/{{ alias }}_transgene_plasmid_variants.vcf.gz | The transgene plasmid variants file generated by medaka. | per-sample |
+| Alignment file | {{ alias }}/tagged_bams/sorted.tagged.bam | The resulting tagged BAM file from mapping reads to the combined reference. | per-sample |
+| Alignment index file | {{ alias }}/tagged_bams/sorted.tagged.bam.bai | The index for the resulting tagged BAM file from mapping reads to the combined reference. | per-sample |
+| backbone_contamination alignment | {{ alias }}/tagged_bams/backbone_contamination.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: backbone_contamination | per-sample |
+| backbone_contamination alignment index | {{ alias }}/tagged_bams/backbone_contamination.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: backbone_contamination | per-sample |
+| full_ssaav alignment | {{ alias }}/tagged_bams/full_ssaav.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: full_ssaav | per-sample |
+| full_ssaav alignment index | {{ alias }}/tagged_bams/full_ssaav.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: full_ssaav | per-sample |
+| partial_ssaav alignment | {{ alias }}/tagged_bams/partial_ssaav.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: partial_ssaav | per-sample |
+| partial_ssaav alignment index | {{ alias }}/tagged_bams/partial_ssaav.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: partial_ssaav | per-sample |
+| full_scaav alignment | {{ alias }}/tagged_bams/full_scaav.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: full_scaav | per-sample |
+| full_scaav alignment index | {{ alias }}/tagged_bams/full_scaav.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: full_scaav | per-sample |
+| itr_region_only alignment | {{ alias }}/tagged_bams/itr_region_only.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: itr_region_only | per-sample |
+| itr_region_only alignment index | {{ alias }}/tagged_bams/itr_region_only.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: itr_region_only | per-sample |
+| complex alignment | {{ alias }}/tagged_bams/complex.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: complex | per-sample |
+| complex alignment index | {{ alias }}/tagged_bams/complex.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: complex | per-sample |
+| partial_scaav alignment | {{ alias }}/tagged_bams/partial_scaav.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignmnets with the genotype assignment: partial_scaav | per-sample |
+| partial_scaav alignment index | {{ alias }}/tagged_bams/partial_scaav.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: partial_scaav | per-sample |
+| unclassified alignment | {{ alias }}/tagged_bams/transgene_unclassified.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignments with the genotype assignment: transgene_unclassified | per-sample |
+| unclassified alignment index | {{ alias }}/tagged_bams/transgene_unclassified.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: transgene_unclassified | per-sample |
+| non_transgene alignment | {{ alias }}/tagged_bams/non_transgene.bam | The resulting tagged BAM file from mapping reads to the combined reference. This file contains alignments with the genotype assignment: non_transgene | per-sample |
+| non_transgene alignment index | {{ alias }}/tagged_bams/non_transgene.bam.bai | The resulting tagged BAM index file from mapping reads to the combined reference. This indexes the file containing alignments with the genotype assignment: non-transgene | per-sample |
+| IGV config JSON file | igv.json | JSON file with IGV config options to be used by the EPI2ME Desktop Application. | aggregated |
+
 
 
 
@@ -343,7 +345,7 @@ If --gtype_bams is set to `true`, these tagged BAMs are split on this tag into s
 
 
 
-## FAQ's
+## FAQs
 
 <!---Frequently asked questions, pose any known limitations as FAQ's.--->
 
@@ -494,8 +496,14 @@ An allowance can be made for some backbone plasmid contamination, and this can b
 </figure>
 
 
-#### 3.4 Complex
-The complex category contains reads with 3 or more alignments.
+#### 3.3 Complex
+Reads with overlapping alignments, or 3 or more alignments, are assigned to the complex category.
+They can’t be assigned to a single structural category and the mapping pattern might indicate 
+genomic rearrangements or concatemers.
+
+#### 3.4 Transgene unclassified
+Reads that map to the transgene plasmid but are not covered by any of the other categories.
+Reads of this category are typically infrequently seen.
 
 
 

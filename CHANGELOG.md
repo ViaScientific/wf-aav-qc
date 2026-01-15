@@ -1,9 +1,31 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.3.1]
+### Changed
+- Updated to wf-template v5.7.0 to maintain compliance with our latest wf-template standard, changing:
+  - Pipeline overview now appears before pipeline parameters in README.
+  - ezCharts plotting library has been updated to 0.15.1, there are no user facing changes to plots.
+  - Fastcat FASTQ pre-processing program has been updated to 0.24.2, it is more robust to malformed FASTQ input.
+  - CHANGELOG to be compliant with our formatting rules.
+- Updated to Medaka v2.2.0 to:
+  - Improve multithreading performance.
+  - Support data from more recent basecalling models. 
+- Increased minimum and recommended CPUs to 8 and 16 respectively.
+- `aav_structures` process: major speed-up from improved BAM tagging implementation.
+### Fixed
+- `polars.exceptions.ComputeError: could not parse '-1' as dtype 'u8'` error when reading BAM info TSV in `aav_structures` process.
+
+## [v1.3.0]
+This update improves performance and broadens platform compatibility, with minor workflow naming adjustments. This does not affect workflow outputs.
+### Changed
+- The workflow Docker image has been updated to use standard Polars rather than the lts-cpu variant, to improve performance.
+- The workflow is now compatible with ARM.
+- Removed workflow suffix from workflow title.
+ 
 ## [v1.2.1]
 ### Fixed
 - Updated to wf-template v5.6.2, fixing:
@@ -23,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Minor decrease to some memory directives to avoid “Process requirement exceeds available memory” errors when running in WSL.
 
 ## [v1.2.0]
-### Updated
+### Changed
 - Diagrams in the README describing AAV genome types. 
 ### Fixed
 - Rounding issues in genome structures table.
@@ -32,11 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ability to load any number of non-transgene plasmid reference files in a directory with `--non_transgene_refs`.
 
 ## [v1.1.2]
-### Updated 
+### Changed
 - Updated Ezcharts to v0.11.2.
 
 ## [v1.1.1]
-## Added
+### Added
 - Publish report missing from v1.0.3.
 ### Fixed
 - Automated basecaller detection not finding a basecaller model.

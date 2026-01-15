@@ -14,6 +14,7 @@ process medakaVersion {
     memory "2 GB"
     output:
         path "medaka_version.txt"
+    script:
     """
     medaka --version | sed 's/ /,/' >> "medaka_version.txt"
     """
@@ -60,7 +61,6 @@ process get_ref_names {
 
 process getParams {
     label "wf_aav"
-    cache false
     cpus 1
     memory "2 GB"
     output:
@@ -82,13 +82,12 @@ process mask_transgene_reference {
     cpus 2
     memory "2 GB"
     input:
-        input:
-            path("aav_transgene_plasmid.fa")
-            val(transgene_plasmid_name)
-            val(itr_locs)
-        output:
-            path("itr_masked_transgene_plasmid.fasta"),
-            emit: masked_transgene_plasmid
+        path("aav_transgene_plasmid.fa")
+        val(transgene_plasmid_name)
+        val(itr_locs)
+    output:
+        path("itr_masked_transgene_plasmid.fasta"),
+        emit: masked_transgene_plasmid
     script:
     """
     workflow-glue mask_itrs \
@@ -166,6 +165,7 @@ process make_mmi_index {
         path "ref_genome.fasta"
     output:
         path "genome_index.mmi"
+    script:
     """
      minimap2 -t ${task.cpus} -I 16G -d genome_index.mmi ref_genome.fasta
     """
@@ -193,13 +193,13 @@ process map_to_combined_reference {
     // Keep two threads for samtools
     def mm2_threads = Math.max(task.cpus - 2, 1)
     """
+    # seqkit BAM needs BAM not SAM!, which explains the samtools view -hu 
     minimap2 -ax map-ont --secondary=no -t ${mm2_threads} \
         genome_index.mmi reads.fastq.gz \
-        | samtools sort - \
-            --write-index \
-            -o ${meta['alias']}_align.bam##idx##${meta['alias']}_align.bam.bai
-
-    seqkit bam ${meta['alias']}_align.bam 2> ${meta['alias']}_bam_info.tsv
+    | samtools view -hu - \
+    | tee >(samtools sort --write-index \
+        -o ${meta['alias']}_align.bam##idx##${meta['alias']}_align.bam.bai - ) \
+    | seqkit bam - 2> ${meta['alias']}_bam_info.tsv
     """
 }
 
@@ -207,6 +207,7 @@ process map_to_combined_reference {
 process truncations {
     /*
     Filter alignments for those that start and end within the ITR-ITR cassette.
+    Provides severity categorization of truncations.
     */
     label "wf_aav"
     cpus 2
@@ -220,19 +221,50 @@ process truncations {
         val(itr_locs)
 
     output:
-        path('truncations.tsv'),
-        emit: locations
+        path('truncations.tsv'), emit: locations
+        path('truncation_severity.tsv'), emit: severity_summary
+
     script:
     """
-    workflow-glue truncations \
-        --bam_info bam_info.tsv \
-        --itr_range $itr_locs.itr1_start $itr_locs.itr2_end \
-        --transgene_plasmid_name "${transgene_plasmid_name}" \
-        --outfile truncations.tsv \
+    workflow-glue truncations \\
+        --bam_info bam_info.tsv \\
+        --itr_range $itr_locs.itr1_start $itr_locs.itr2_end \\
+        --transgene_plasmid_name "${transgene_plasmid_name}" \\
+        --outfile truncations.tsv \\
+        --summary_outfile truncation_severity.tsv \\
         --sample_id "$meta.alias"
     """
 }
 
+
+process length_statistics {
+    /*
+    Calculate read length statistics relative to expected AAV genome size.
+    Provides percentage-based binning to identify truncation patterns.
+    */
+    label "wf_aav"
+    cpus 2
+    memory "2 GB"
+
+    input:
+        tuple val(meta),
+              path("bam_info.tsv")
+        val(transgene_plasmid_name)
+
+    output:
+        path('length_statistics.tsv'), emit: length_stats
+
+    script:
+    """
+    workflow-glue length_statistics \\
+        --bam_info bam_info.tsv \\
+        --transgene_plasmid_name "${transgene_plasmid_name}" \\
+        --sample_id "$meta.alias" \\
+        --bin_size 500 \\
+        --max_length 5000 \\
+        --outfile length_statistics.tsv
+    """
+}
 
 process contamination {
     /*
@@ -264,10 +296,49 @@ process contamination {
 }
 
 
+process recombination {
+    /*
+    Detect inter-plasmid recombination events.
+    Identifies reads with alignments to multiple different reference plasmids.
+    Uses ref_ids.json for accurate categorization and applies minimum alignment
+    length thresholds to reduce false positives from short spurious alignments.
+    */
+    label "wf_aav"
+    cpus 2
+    memory "2 GB"
+
+    input:
+        tuple val(meta),
+              path("bam_info.tsv")
+        path("ref_ids.json")
+        val(transgene_plasmid_name)
+        val(itr_locs)
+
+    output:
+        path('recombination_events.tsv'), emit: events
+        path('recombination_summary.tsv'), emit: summary
+
+    script:
+        def itr_range = (itr_locs && itr_locs.itr1_start != null && itr_locs.itr2_end != null) ? "--itr_range ${itr_locs.itr1_start} ${itr_locs.itr2_end}" : ""
+    """
+    workflow-glue recombination \\
+        --bam_info bam_info.tsv \\
+        --ref_ids_json ref_ids.json \\
+        --transgene_plasmid_name "${transgene_plasmid_name}" \\
+        --sample_id "$meta.alias" \\
+        ${itr_range} \\
+        --min_alignment_length 200 \\
+        --min_host_alignment_length 500 \\
+        --outfile recombination_events.tsv \\
+        --summary_outfile recombination_summary.tsv
+    """
+}
+
+
 process aav_structures {
     label "wf_aav"
-    cpus params.threads
-    memory '4 GB'
+    cpus Math.min(params.threads, 16)
+    memory '15 GB'
     input:
         tuple val(meta),
               path("bam_info.tsv"),
@@ -285,14 +356,20 @@ process aav_structures {
         tuple val(meta),
               path("tagged_bams/"),
               emit: tagged_bams
+    script:
+        def polars_threads = Math.max(1, task.cpus - 2) 
+        def aux_threads = 3
+        
     """
-    export POLARS_MAX_THREADS=${task.cpus}
+    export POLARS_MAX_THREADS=${polars_threads}
+    mkdir tmp_bams
     mkdir tagged_bams
 
-    workflow-glue aav_structures \
-        --bam_info bam_info.tsv \
-        --bam_in sorted.bam \
-        --bam_out tagged_bams/sorted.tagged.bam \
+    # Sort BAM by name so supplementary records are contiguous in the file.
+    samtools sort -n -@ ${aux_threads} -u sorted.bam \
+    | workflow-glue aav_structures \
+        --bam_in - \
+        --bam_out - \
         --itr_locations \
             $itr_locs.itr1_start $itr_locs.itr1_end $itr_locs.itr2_start $itr_locs.itr2_end \
         --output_plot_data 'aav_structure_counts.tsv' \
@@ -302,17 +379,19 @@ process aav_structures {
         --itr_fl_threshold ${params.itr_fl_threshold} \
         --itr_backbone_threshold ${params.itr_backbone_threshold} \
         --symmetry_threshold ${params.symmetry_threshold} \
-        --threads ${params.threads}
-
-    cd tagged_bams
-
-    # The BAMs output by aav_structures.py will contain a AV:Z tag that tags an alignment with its assigned genome type
-    # If params.output_genometype_bams is true, then split these tagged BAMs by the AV tag
+    | { 
     if [ "${params.output_genometype_bams}" == "true" ]; then
-        samtools split -d AV -@${task.cpus} sorted.tagged.bam
-        rm sorted.tagged.bam
+        samtools split -@ ${aux_threads} -d AV -f 'tmp_bams/%!.bam' -
+        for bam in tmp_bams/*.bam; do
+            base="tagged_bams/\$(basename \$bam)"
+            samtools sort --write-index -o "\${base}##idx##\${base}.bai" -@ ${aux_threads} \${bam}
+        done
+        rm -rf tmp_bams
+    else
+        samtools sort --write-index \
+            -o "tagged_bams/sorted.tagged.bam##idx##tagged_bams/sorted.tagged.bam.bai" -@ ${aux_threads} -
     fi
-    samtools index -M *.bam
+    }
     """
 }
 
@@ -333,6 +412,7 @@ process itr_coverage {
         val(itr_locs)
     output:
         path('itr_coverage_trimmed.tsv')
+    script:
     """
     # mapping to forward strand
     samtools view -h -F 16 -h align.bam ${transgene_plasmid_name} \
@@ -387,12 +467,12 @@ process run_medaka {
     samtools view align.bam -bh "${transgene_plasmid_name}" > transgene_reads.bam
     samtools index transgene_reads.bam
 
-    medaka consensus transgene_reads.bam consensus_probs.hdf \
+    medaka inference transgene_reads.bam consensus_probs.hdf \
         --threads $task.cpus --model "${basecall_model}:variant"
 
-    medaka variant \
-        transgene_plasmid.fa \
+    medaka vcf \
         consensus_probs.hdf \
+        transgene_plasmid.fa \
         "${meta.alias}.transgene_plasmid_sorted.vcf"
 
     bgzip "${meta.alias}.transgene_plasmid_sorted.vcf"
@@ -412,8 +492,11 @@ process makeReport {
         val metadata
         path stats, stageAs: "stats_*"
         path 'truncations.tsv'
+        path 'truncation_severity.tsv'
         path 'itr_coverage.tsv'
+        path 'length_statistics.tsv'
         path 'contam_class_counts.tsv'
+        path 'recombination_summary.tsv'
         path 'structure_counts.tsv'
         path "versions/*"
         path "params.json"
@@ -432,8 +515,11 @@ process makeReport {
         --params params.json \
         --metadata metadata.json \
         --truncations truncations.tsv \
+        --truncation_severity truncation_severity.tsv \
         --itr_coverage itr_coverage.tsv \
+        --length_statistics length_statistics.tsv \
         --contam_class_counts contam_class_counts.tsv \
+        --recombination_summary recombination_summary.tsv \
         --aav_structures structure_counts.tsv
     """
 }
@@ -449,7 +535,7 @@ process output {
     cpus 2
     memory "2 GB"
     publishDir (
-        params.outdir,
+        params.out_dir,
         mode: "copy",
         saveAs: { dirname ? "$dirname/$fname" : fname }
     )
@@ -515,11 +601,23 @@ workflow pipeline {
             itr_locs
         )
 
+        length_statistics(
+            map_to_combined_reference.out.bam_info,
+            transgene_plasmid_name
+        )
+
         contamination(
             map_to_combined_reference.out.bam_info
                 | join(samples.map {meta, fastq, stats -> [meta, stats]}),
                ref_transgene_plasmid,
                make_combined_reference.out.ref_ids_json.first()
+        )
+
+        recombination(
+            map_to_combined_reference.out.bam_info,
+            make_combined_reference.out.ref_ids_json.first(),
+            transgene_plasmid_name,
+            itr_locs
         )
 
         aav_structures(
@@ -556,8 +654,8 @@ workflow pipeline {
                 igv_paths,
                 transgene_plasmid_name,
                 [displayMode: "SQUISHED", colorBy: "strand"],
-                 Channel.of(null), // Variant extra opts
-                 Channel.of(false)) // Keep track order
+                 channel.of(null), // Variant extra opts
+                 channel.of(false)) // Keep track order
          }
 
         metadata = for_report.meta.collect()
@@ -567,8 +665,11 @@ workflow pipeline {
             metadata,
             stats,
             truncations.out.locations.collectFile(keepHeader: true),
+            truncations.out.severity_summary.collectFile(keepHeader: true),
             itr_coverage.out.collectFile(keepHeader: true),
+            length_statistics.out.length_stats.collectFile(keepHeader: true),
             contamination.out.contam_class_counts.collectFile(keepHeader: true),
+            recombination.out.summary.collectFile(keepHeader: true),
             aav_structures.out.structure_counts.collectFile(keepHeader: true),
             software_versions.collect(),
             workflow_params,
