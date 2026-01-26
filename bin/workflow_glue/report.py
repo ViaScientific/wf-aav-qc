@@ -107,6 +107,127 @@ def plot_truncation_severity(report, severity_file):
                         DataTable.from_pandas(df_display, use_index=False)
 
 
+def plot_truncation_length_granular(report, granular_file):
+    """Make report section with granular truncation length distribution.
+    
+    Shows bar plot with each unique aligned length as its own bar.
+    Uses truncation data (reads within ITR-ITR region).
+    """
+    df = pd.read_csv(
+        granular_file,
+        sep='\t',
+        dtype={
+            'aligned_length': np.int64,
+            'count': np.int64,
+            'percentage': np.float64,
+            'sample_id': str
+        }
+    )
+
+    with report.add_section("Truncation Length Distribution", "Trunc Length"):
+        p(
+            "This shows the distribution of aligned lengths (in base pairs) for reads "
+            "within the ITR-ITR region. Each bar represents a unique aligned length, "
+            "providing granular visibility into truncation patterns."
+        )
+        tabs = Tabs()
+        with tabs.add_dropdown_menu():
+
+            for sample, df_sample in df.groupby('sample_id'):
+                with tabs.add_dropdown_tab(sample):
+                    # Sort by aligned length
+                    df_sample = df_sample.sort_values('aligned_length')
+                    
+                    # Display total reads
+                    total_reads = df_sample['count'].sum()
+                    p(f"Total reads: {total_reads:,}")
+
+                    with Grid(columns=1):
+                        if not df_sample.empty:
+                            plt = ezc.barplot(
+                                data=df_sample, x='aligned_length', y='percentage')
+                            plt.title = dict(text='Truncation Length Distribution')
+                            plt._fig.xaxis.axis_label = 'Aligned length (bp)'
+                            plt._fig.yaxis.axis_label = 'Percentage of reads'
+                            EZChart(plt, theme='epi2melabs', height='400px')
+
+
+def plot_integrity(report, summary_file, distribution_file):
+    """Make report section with transgene integrity metrics.
+    
+    Shows %Intact summary and bar plots of mapped/continuously mapped score distributions.
+    """
+    df_summary = pd.read_csv(
+        summary_file,
+        sep='\t',
+        dtype={
+            'total_mapped': np.int64,
+            'total_continuously_mapped': np.int64,
+            'percent_intact': np.float64,
+            'total_reads': np.int64,
+            'sample_id': str
+        }
+    )
+    
+    df_dist = pd.read_csv(
+        distribution_file,
+        sep='\t',
+        dtype={
+            'score': np.int64,
+            'count': np.int64,
+            'percentage': np.float64,
+            'score_type': str,
+            'sample_id': str
+        }
+    )
+
+    with report.add_section("Transgene Integrity", "Integrity"):
+        p(
+            "This shows the transgene integrity metrics based on base-level matching. "
+            "%Intact = (continuously mapped bases) / (total mapped bases) × 100. "
+            "Continuously mapped reads have all bases matching with no mismatches or indels."
+        )
+        tabs = Tabs()
+        with tabs.add_dropdown_menu():
+
+            for sample, df_sample in df_summary.groupby('sample_id'):
+                with tabs.add_dropdown_tab(sample):
+                    # Display summary metrics
+                    row = df_sample.iloc[0]
+                    p(f"**%Intact: {row['percent_intact']:.2f}%**")
+                    p(f"Total mapped bases: {row['total_mapped']:,}")
+                    p(f"Continuously mapped bases: {row['total_continuously_mapped']:,}")
+                    p(f"Total reads analyzed: {row['total_reads']:,}")
+
+                    # Get distribution data for this sample
+                    df_dist_sample = df_dist[df_dist['sample_id'] == sample]
+                    
+                    with Grid(columns=2):
+                        # Mapped score distribution
+                        df_mapped = df_dist_sample[
+                            df_dist_sample['score_type'] == 'mapped'].copy()
+                        if not df_mapped.empty:
+                            df_mapped = df_mapped.sort_values('score')
+                            plt = ezc.barplot(
+                                data=df_mapped, x='score', y='percentage')
+                            plt.title = dict(text='Mapped Score Distribution')
+                            plt._fig.xaxis.axis_label = 'Mapped bases per read'
+                            plt._fig.yaxis.axis_label = 'Percentage of reads'
+                            EZChart(plt, theme='epi2melabs', height='400px')
+                        
+                        # Continuously mapped score distribution
+                        df_cont = df_dist_sample[
+                            df_dist_sample['score_type'] == 'continuously_mapped'].copy()
+                        if not df_cont.empty:
+                            df_cont = df_cont.sort_values('score')
+                            plt = ezc.barplot(
+                                data=df_cont, x='score', y='percentage')
+                            plt.title = dict(text='Continuously Mapped Score Distribution')
+                            plt._fig.xaxis.axis_label = 'Continuously mapped bases per read'
+                            plt._fig.yaxis.axis_label = 'Percentage of reads'
+                            EZChart(plt, theme='epi2melabs', height='400px')
+
+
 def plot_length_statistics(report, length_stats_file):
     """Make report section with read alignment length distribution.
     
@@ -452,6 +573,8 @@ def main(args):
         args.contam_class_counts)
     plot_trucations(report, args.truncations)
     plot_truncation_severity(report, args.truncation_severity)
+    plot_truncation_length_granular(report, args.truncation_length_granular)
+    plot_integrity(report, args.integrity_summary, args.integrity_distribution)
     plot_length_statistics(report, args.length_statistics)
     plot_itr_coverage(report, args.itr_coverage)
     plot_recombination(report, args.recombination_summary)
@@ -484,6 +607,8 @@ def argparser():
     parser.add_argument(
         "--truncation_severity", help="TSV with truncation severity summary.")
     parser.add_argument(
+        "--truncation_length_granular", help="TSV with per-length truncation data.")
+    parser.add_argument(
         "--length_statistics", help="TSV with read length completeness statistics.")
     parser.add_argument(
         "--itr_coverage", help="TSV with alignment Pos and EndPos columns.")
@@ -493,6 +618,10 @@ def argparser():
         "--contam_class_counts", help="TSV of reference mapping counts.")
     parser.add_argument(
         "--recombination_summary", help="TSV with recombination event summary.")
+    parser.add_argument(
+        "--integrity_summary", help="TSV with integrity summary metrics.")
+    parser.add_argument(
+        "--integrity_distribution", help="TSV with integrity score distribution.")
     parser.add_argument(
         "--aav_structures", help="TSV of reads with AAV structure assignment.")
     parser.add_argument(

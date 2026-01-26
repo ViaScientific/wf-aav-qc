@@ -39,6 +39,11 @@ def argparser():
         help="Path to output truncation severity summary TSV",
         type=Path,
         default=None)
+    parser.add_argument(
+        '--granular_outfile',
+        help="Path to output per-length truncation data TSV",
+        type=Path,
+        default=None)
 
     return parser
 
@@ -164,6 +169,27 @@ def main(args):
 
 
     # Generate severity summary if output path provided
+    if args.summary_outfile or args.granular_outfile:
+        # Aggregate per read using interval merging for accurate coverage
+        def aggregate_read_intervals(group):
+            """Aggregate multiple alignments using interval merging."""
+            intervals = list(zip(group['Pos'].values, group['EndPos'].values))
+            merged_coverage = calculate_merged_coverage(intervals)
+            completeness_pct = (merged_coverage / expected_length * 100)
+            return pd.Series({
+                'completeness_pct': completeness_pct,
+                'aligned_length': merged_coverage
+            })
+        
+        df_per_read = (
+            df_all.groupby('Read')
+            .apply(aggregate_read_intervals, include_groups=False)
+            .reset_index()
+        )
+        df_per_read['severity'] = df_per_read['completeness_pct'].apply(assign_severity)
+        total_reads = len(df_per_read)
+
+    # Generate severity summary if output path provided
     if args.summary_outfile:
         # Define severity order for display
         severity_order = [
@@ -174,25 +200,8 @@ def main(args):
             "Very severe truncation (<25%)"
         ]
         
-        # Aggregate per read using interval merging for accurate coverage
-        def aggregate_read_intervals(group):
-            """Aggregate multiple alignments using interval merging."""
-            intervals = list(zip(group['Pos'].values, group['EndPos'].values))
-            merged_coverage = calculate_merged_coverage(intervals)
-            completeness_pct = (merged_coverage / expected_length * 100)
-            return pd.Series({'completeness_pct': completeness_pct})
-        
-        df_per_read = (
-            df_all.groupby('Read')
-            .apply(aggregate_read_intervals, include_groups=False)
-            .reset_index()
-        )
-        df_per_read['severity'] = df_per_read['completeness_pct'].apply(assign_severity)
-
-        
         # Count by severity
         severity_counts = df_per_read['severity'].value_counts()
-        total_reads = len(df_per_read)
         
         # Create summary dataframe with all severities (including zeros)
         df_summary = pd.DataFrame({'severity': severity_order})
@@ -201,3 +210,18 @@ def main(args):
         df_summary['sample_id'] = args.sample_id
         
         df_summary.to_csv(args.summary_outfile, sep='\t', index=False)
+
+    # Generate granular per-length output if path provided
+    if args.granular_outfile:
+        # Count by aligned length (each unique length is a bin)
+        length_counts = df_per_read['aligned_length'].value_counts().sort_index()
+        
+        df_granular = pd.DataFrame({
+            'aligned_length': length_counts.index.astype(int),
+            'count': length_counts.values
+        })
+        df_granular['percentage'] = (df_granular['count'] / total_reads * 100).round(2)
+        df_granular['sample_id'] = args.sample_id
+        
+        df_granular.to_csv(args.granular_outfile, sep='\t', index=False)
+

@@ -223,6 +223,7 @@ process truncations {
     output:
         path('truncations.tsv'), emit: locations
         path('truncation_severity.tsv'), emit: severity_summary
+        path('truncation_length_granular.tsv'), emit: length_granular
 
     script:
     """
@@ -232,6 +233,7 @@ process truncations {
         --transgene_plasmid_name "${transgene_plasmid_name}" \\
         --outfile truncations.tsv \\
         --summary_outfile truncation_severity.tsv \\
+        --granular_outfile truncation_length_granular.tsv \\
         --sample_id "$meta.alias"
     """
 }
@@ -331,6 +333,42 @@ process recombination {
         --min_host_alignment_length 500 \\
         --outfile recombination_events.tsv \\
         --summary_outfile recombination_summary.tsv
+    """
+}
+
+
+process integrity {
+    /*
+    Calculate transgene integrity scores from BAM file.
+    Outputs per-read mapped and continuously mapped scores, plus %intact summary.
+    */
+    label "wf_aav"
+    cpus 2
+    memory "4 GB"
+
+    input:
+        tuple val(meta),
+              path("sorted.bam"),
+              path("sorted.bam.bai")
+        path("transgene_plasmid.fa")
+        val(transgene_plasmid_name)
+        val(itr_locs)
+
+    output:
+        path('integrity_summary.tsv'), emit: summary
+        path('integrity_summary_distribution.tsv'), emit: distribution
+        path('integrity_per_read.tsv'), emit: per_read
+
+    script:
+    """
+    workflow-glue integrity \\
+        --bam sorted.bam \\
+        --transgene_plasmid_name "${transgene_plasmid_name}" \\
+        --transgene_plasmid_fasta transgene_plasmid.fa \\
+        --itr_range $itr_locs.itr1_start $itr_locs.itr2_end \\
+        --sample_id "$meta.alias" \\
+        --per_read_outfile integrity_per_read.tsv \\
+        --summary_outfile integrity_summary.tsv
     """
 }
 
@@ -493,10 +531,13 @@ process makeReport {
         path stats, stageAs: "stats_*"
         path 'truncations.tsv'
         path 'truncation_severity.tsv'
+        path 'truncation_length_granular.tsv'
         path 'itr_coverage.tsv'
         path 'length_statistics.tsv'
         path 'contam_class_counts.tsv'
         path 'recombination_summary.tsv'
+        path 'integrity_summary.tsv'
+        path 'integrity_distribution.tsv'
         path 'structure_counts.tsv'
         path "versions/*"
         path "params.json"
@@ -516,10 +557,13 @@ process makeReport {
         --metadata metadata.json \
         --truncations truncations.tsv \
         --truncation_severity truncation_severity.tsv \
+        --truncation_length_granular truncation_length_granular.tsv \
         --itr_coverage itr_coverage.tsv \
         --length_statistics length_statistics.tsv \
         --contam_class_counts contam_class_counts.tsv \
         --recombination_summary recombination_summary.tsv \
+        --integrity_summary integrity_summary.tsv \
+        --integrity_distribution integrity_distribution.tsv \
         --aav_structures structure_counts.tsv
     """
 }
@@ -620,6 +664,13 @@ workflow pipeline {
             itr_locs
         )
 
+        integrity(
+            map_to_combined_reference.out.bam,
+            ref_transgene_plasmid,
+            transgene_plasmid_name,
+            itr_locs
+        )
+
         aav_structures(
             map_to_combined_reference.out.bam_info
                 .join(map_to_combined_reference.out.bam),
@@ -666,10 +717,13 @@ workflow pipeline {
             stats,
             truncations.out.locations.collectFile(keepHeader: true),
             truncations.out.severity_summary.collectFile(keepHeader: true),
+            truncations.out.length_granular.collectFile(keepHeader: true),
             itr_coverage.out.collectFile(keepHeader: true),
             length_statistics.out.length_stats.collectFile(keepHeader: true),
             contamination.out.contam_class_counts.collectFile(keepHeader: true),
             recombination.out.summary.collectFile(keepHeader: true),
+            integrity.out.summary.collectFile(keepHeader: true),
+            integrity.out.distribution.collectFile(keepHeader: true),
             aav_structures.out.structure_counts.collectFile(keepHeader: true),
             software_versions.collect(),
             workflow_params,
