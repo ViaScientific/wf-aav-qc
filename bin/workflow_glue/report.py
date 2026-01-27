@@ -107,55 +107,53 @@ def plot_truncation_severity(report, severity_file):
                         DataTable.from_pandas(df_display, use_index=False)
 
 
-def plot_truncation_length_granular(report, granular_file):
-    """Make report section with granular truncation length distribution.
+def plot_truncation_length_granular(report, truncations_file):
+    """Make report section with truncation length distribution.
     
-    Shows bar plot with each unique aligned length as its own bar.
+    Shows histogram of aligned lengths using truncations data.
     Uses truncation data (reads within ITR-ITR region).
     """
     df = pd.read_csv(
-        granular_file,
+        truncations_file,
         sep='\t',
         dtype={
-            'aligned_length': np.int64,
-            'count': np.int64,
-            'percentage': np.float64,
+            'Ref Start': np.int64,
+            'Ref End': np.int64,
             'sample_id': str
         }
     )
+    
+    # Calculate aligned length from positions
+    df['aligned_length'] = df['Ref End'] - df['Ref Start']
 
     with report.add_section("Truncation Length Distribution", "Trunc Length"):
         p(
             "This shows the distribution of aligned lengths (in base pairs) for reads "
-            "within the ITR-ITR region. Each bar represents a unique aligned length, "
-            "providing granular visibility into truncation patterns."
+            "within the ITR-ITR region, providing visibility into truncation patterns."
         )
         tabs = Tabs()
         with tabs.add_dropdown_menu():
 
             for sample, df_sample in df.groupby('sample_id'):
                 with tabs.add_dropdown_tab(sample):
-                    # Sort by aligned length
-                    df_sample = df_sample.sort_values('aligned_length')
-                    
                     # Display total reads
-                    total_reads = df_sample['count'].sum()
+                    total_reads = len(df_sample)
                     p(f"Total reads: {total_reads:,}")
 
                     with Grid(columns=1):
                         if not df_sample.empty:
-                            plt = ezc.barplot(
-                                data=df_sample, x='aligned_length', y='percentage')
-                            plt.title = dict(text='Truncation Length Distribution')
+                            # Use histplot for proper numeric x-axis with tick labels
+                            plt = ezc.histplot(
+                                data=df_sample[['aligned_length']], binwidth=1)
                             plt._fig.xaxis.axis_label = 'Aligned length (bp)'
-                            plt._fig.yaxis.axis_label = 'Percentage of reads'
+                            plt._fig.yaxis.axis_label = 'Number of reads'
                             EZChart(plt, theme='epi2melabs', height='400px')
 
 
-def plot_integrity(report, summary_file, distribution_file):
+def plot_integrity(report, summary_file, per_read_file):
     """Make report section with transgene integrity metrics.
     
-    Shows %Intact summary and bar plots of mapped/continuously mapped score distributions.
+    Shows %Intact summary and histograms of mapped/continuously mapped score distributions.
     """
     df_summary = pd.read_csv(
         summary_file,
@@ -165,27 +163,30 @@ def plot_integrity(report, summary_file, distribution_file):
             'total_continuously_mapped': np.int64,
             'percent_intact': np.float64,
             'total_reads': np.int64,
+            'full_length_reads': np.int64,
+            'inner_region_length': np.int64,
             'sample_id': str
         }
     )
     
-    df_dist = pd.read_csv(
-        distribution_file,
+    # Read per-read data for histograms
+    df_per_read = pd.read_csv(
+        per_read_file,
         sep='\t',
         dtype={
-            'score': np.int64,
-            'count': np.int64,
-            'percentage': np.float64,
-            'score_type': str,
+            'read_id': str,
+            'mapped_score': np.int64,
+            'continuously_mapped_score': np.int64,
+            'is_full_length': bool,
             'sample_id': str
         }
     )
 
     with report.add_section("Transgene Integrity", "Integrity"):
         p(
-            "This shows the transgene integrity metrics based on base-level matching. "
-            "%Intact = (continuously mapped bases) / (total mapped bases) × 100. "
-            "Continuously mapped reads have all bases matching with no mismatches or indels."
+            "This shows the transgene integrity metrics based on read coverage. "
+            "Full-length reads span from ITR1 to ITR2 (inner region). "
+            "%Intact = (continuously mapped score) / (total mapped score) × 100."
         )
         tabs = Tabs()
         with tabs.add_dropdown_menu():
@@ -195,36 +196,30 @@ def plot_integrity(report, summary_file, distribution_file):
                     # Display summary metrics
                     row = df_sample.iloc[0]
                     p(f"**%Intact: {row['percent_intact']:.2f}%**")
-                    p(f"Total mapped bases: {row['total_mapped']:,}")
-                    p(f"Continuously mapped bases: {row['total_continuously_mapped']:,}")
+                    p(f"Total mapped score: {row['total_mapped']:,}")
+                    p(f"Continuously mapped score: {row['total_continuously_mapped']:,}")
                     p(f"Total reads analyzed: {row['total_reads']:,}")
+                    p(f"Full-length reads: {row['full_length_reads']:,}")
+                    p(f"Inner region length (ITR1 end to ITR2 start): {row['inner_region_length']:,} bp")
 
-                    # Get distribution data for this sample
-                    df_dist_sample = df_dist[df_dist['sample_id'] == sample]
+                    # Get per-read data for this sample
+                    df_reads = df_per_read[df_per_read['sample_id'] == sample]
                     
                     with Grid(columns=2):
                         # Mapped score distribution
-                        df_mapped = df_dist_sample[
-                            df_dist_sample['score_type'] == 'mapped'].copy()
-                        if not df_mapped.empty:
-                            df_mapped = df_mapped.sort_values('score')
-                            plt = ezc.barplot(
-                                data=df_mapped, x='score', y='percentage')
-                            plt.title = dict(text='Mapped Score Distribution')
-                            plt._fig.xaxis.axis_label = 'Mapped bases per read'
-                            plt._fig.yaxis.axis_label = 'Percentage of reads'
+                        if not df_reads.empty:
+                            plt = ezc.histplot(
+                                data=df_reads[['mapped_score']], binwidth=1)
+                            plt._fig.xaxis.axis_label = 'Mapped length per read (bp)'
+                            plt._fig.yaxis.axis_label = 'Number of reads'
                             EZChart(plt, theme='epi2melabs', height='400px')
                         
                         # Continuously mapped score distribution
-                        df_cont = df_dist_sample[
-                            df_dist_sample['score_type'] == 'continuously_mapped'].copy()
-                        if not df_cont.empty:
-                            df_cont = df_cont.sort_values('score')
-                            plt = ezc.barplot(
-                                data=df_cont, x='score', y='percentage')
-                            plt.title = dict(text='Continuously Mapped Score Distribution')
-                            plt._fig.xaxis.axis_label = 'Continuously mapped bases per read'
-                            plt._fig.yaxis.axis_label = 'Percentage of reads'
+                        if not df_reads.empty:
+                            plt = ezc.histplot(
+                                data=df_reads[['continuously_mapped_score']], binwidth=1)
+                            plt._fig.xaxis.axis_label = 'Continuously mapped length per read (bp)'
+                            plt._fig.yaxis.axis_label = 'Number of reads'
                             EZChart(plt, theme='epi2melabs', height='400px')
 
 
@@ -573,8 +568,8 @@ def main(args):
         args.contam_class_counts)
     plot_trucations(report, args.truncations)
     plot_truncation_severity(report, args.truncation_severity)
-    plot_truncation_length_granular(report, args.truncation_length_granular)
-    plot_integrity(report, args.integrity_summary, args.integrity_distribution)
+    plot_truncation_length_granular(report, args.truncations)
+    plot_integrity(report, args.integrity_summary, args.integrity_per_read)
     plot_length_statistics(report, args.length_statistics)
     plot_itr_coverage(report, args.itr_coverage)
     plot_recombination(report, args.recombination_summary)
@@ -621,7 +616,7 @@ def argparser():
     parser.add_argument(
         "--integrity_summary", help="TSV with integrity summary metrics.")
     parser.add_argument(
-        "--integrity_distribution", help="TSV with integrity score distribution.")
+        "--integrity_per_read", help="TSV with per-read integrity scores.")
     parser.add_argument(
         "--aav_structures", help="TSV of reads with AAV structure assignment.")
     parser.add_argument(

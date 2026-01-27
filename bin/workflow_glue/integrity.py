@@ -1,8 +1,9 @@
 """Calculate transgene integrity scores.
 
 Calculates per-read mapped and continuously mapped scores from BAM file.
-- Mapped score: Total matching bases within ITR region
-- Continuously mapped score: Full score if all bases match, else 0
+- Full-length: Read starts within/before ITR1 end AND ends within/after ITR2 start
+- Mapped score: Inner region length for full-length; calculated length for partial
+- Continuously mapped score: Inner region length for full-length; 0 for partial
 - %Intact = sum(continuously_mapped) / sum(mapped) * 100
 """
 
@@ -26,12 +27,9 @@ def argparser():
         '--transgene_plasmid_name',
         help="Name of transgene plasmid reference")
     parser.add_argument(
-        '--transgene_plasmid_fasta',
-        help="Path to transgene plasmid reference FASTA",
-        type=Path)
-    parser.add_argument(
-        '--itr_range', help="[itr1_start, itr_2_end]",
-        nargs='*', type=int)
+        '--itr_locations',
+        help="ITR locations: itr1_start itr1_end itr2_start itr2_end",
+        nargs=4, type=int)
     parser.add_argument(
         '--sample_id',
         help="sample ID")
@@ -47,129 +45,114 @@ def argparser():
     return parser
 
 
-def calculate_read_integrity(alignment, itr_start, itr_end, ref_fasta, ref_name):
-    """Calculate integrity scores for a single alignment.
+def get_alignment_score(alignment):
+    """Get alignment score for ranking alignments.
+    
+    Uses AS tag if available, otherwise mapping quality.
     
     :param alignment: pysam AlignedSegment
-    :param itr_start: ITR region start position
-    :param itr_end: ITR region end position
-    :param ref_fasta: pysam.FastaFile object
-    :param ref_name: Reference sequence name
-    :return: tuple (mapped_score, continuously_mapped_score)
+    :return: alignment score (higher is better)
     """
-    if alignment.is_unmapped:
-        return 0, 0
-    
-    # Get aligned pairs (query_pos, ref_pos)
-    # with_seq=False beucase MD tag might be missing
-    aligned_pairs = alignment.get_aligned_pairs(with_seq=False)
-    
-    if not aligned_pairs:
-        return 0, 0
-    
-    matches = 0
-    has_mismatch_or_indel = False
-    query_seq = alignment.query_sequence
-    
-    if query_seq is None:
-        return 0, 0
-        
     try:
-        ref_seq_str = ref_fasta.fetch(ref_name)
+        return alignment.get_tag('AS')
     except KeyError:
-        # Reference name not found in FASTA
-        return 0, 0
+        return alignment.mapping_quality
+
+
+def calculate_read_integrity(read_start, read_end, itr1_end, itr2_start, inner_length):
+    """Calculate integrity scores for a single read based on position.
     
-    for query_pos, ref_pos in aligned_pairs:
-        # Skip positions outside ITR region
-        if ref_pos is None:
-            # Insertion in query (no reference position)
-            # Indels count against continuously mapped score
-            if itr_start <= alignment.reference_start < itr_end:
-                 # Approximating location check for insertion
-                 # Ideally check if insertion is within ITR bounds based on adjacent matches
-                 # But simplistic check: if we are processing this read which overlaps ITR...
-                 # More accurate: check previous/next ref_pos.
-                 # For now, simplistic: if alignment overlaps ITR, indels matter.
-                 pass
-            has_mismatch_or_indel = True
-            continue
+    Full-length: read starts at or before ITR1 end AND ends at or after ITR2 start.
+    
+    :param read_start: Alignment reference start position
+    :param read_end: Alignment reference end position
+    :param itr1_end: End position of ITR1
+    :param itr2_start: Start position of ITR2
+    :param inner_length: Pre-calculated inner region length (itr2_start - itr1_end)
+    :return: tuple (mapped_score, continuously_mapped_score, is_full_length)
+    """
+    # Check if full-length: starts within/before ITR1 and ends within/after ITR2
+    is_full_length = (read_start <= itr1_end) and (read_end >= itr2_start)
+    
+    if is_full_length:
+        # Full-length reads get the constant inner_length for both scores
+        return inner_length, inner_length, True
+    else:
+        # Partial reads: calculate length excluding ITR regions
+        # Clamp positions to inner region (itr1_end to itr2_start)
+        clamped_start = max(read_start, itr1_end)
+        clamped_end = min(read_end, itr2_start)
         
-        if ref_pos < itr_start or ref_pos >= itr_end:
-            continue
-        
-        if query_pos is None:
-            # Deletion in query (no query position)
-            has_mismatch_or_indel = True
-            continue
-        
-        # Both positions exist - check if it's a match
-        query_base = query_seq[query_pos]
-        # ref_pos is 0-based
-        if ref_pos < len(ref_seq_str):
-            ref_base = ref_seq_str[ref_pos]
-            if ref_base.upper() == query_base.upper():
-                matches += 1
-            else:
-                has_mismatch_or_indel = True
+        # If the read doesn't overlap the inner region at all
+        if clamped_start >= clamped_end:
+            mapped_score = 0
         else:
-            has_mismatch_or_indel = True
-    
-    mapped_score = matches
-    continuously_mapped_score = matches if not has_mismatch_or_indel else 0
-    
-    return mapped_score, continuously_mapped_score
+            mapped_score = clamped_end - clamped_start
+        
+        # Partial reads get 0 for continuously mapped
+        return mapped_score, 0, False
 
 
 def main(args):
     """Run main entry point."""
-    itr_start, itr_end = args.itr_range
+    itr1_start, itr1_end, itr2_start, itr2_end = args.itr_locations
+    
+    # Calculate the inner region length (excluding ITRs)
+    # This is the constant score for full-length reads
+    inner_length = itr2_start - itr1_end
     
     # Open BAM file
     bam = pysam.AlignmentFile(args.bam, "rb")
-    ref_fasta = pysam.FastaFile(args.transgene_plasmid_fasta)
     
-    # Track per-read scores (aggregate multiple alignments per read)
-    read_scores = {}  # read_id -> {'mapped': int, 'continuously_mapped': int}
+    # Track best alignment per read (by alignment score)
+    # read_id -> {'start': int, 'end': int, 'score': int}
+    best_alignments = {}
     
-    # Fetch alignments to transgene plasmid in ITR region
+    # Fetch alignments to transgene plasmid in the full ITR-ITR region
     try:
-        alignments = bam.fetch(args.transgene_plasmid_name, itr_start, itr_end)
+        alignments = bam.fetch(args.transgene_plasmid_name, itr1_start, itr2_end)
     except ValueError:
         # Reference not in BAM or region out of bounds
         alignments = []
     
     for aln in alignments:
+        if aln.is_unmapped:
+            continue
+            
         read_id = aln.query_name
-        mapped, continuously_mapped = calculate_read_integrity(
-            aln, itr_start, itr_end, ref_fasta, args.transgene_plasmid_name)
+        aln_score = get_alignment_score(aln)
+        read_start = aln.reference_start
+        read_end = aln.reference_end
         
-        if read_id not in read_scores:
-            read_scores[read_id] = {
-                'mapped': 0,
-                'continuously_mapped': 0,
-                'has_mismatch': False
+        # Keep only the best alignment per read
+        if read_id not in best_alignments:
+            best_alignments[read_id] = {
+                'start': read_start,
+                'end': read_end,
+                'score': aln_score
             }
-        
-        read_scores[read_id]['mapped'] += mapped
-        # If any alignment for this read has mismatch, mark it
-        if mapped > 0 and continuously_mapped == 0:
-            read_scores[read_id]['has_mismatch'] = True
-        elif continuously_mapped > 0:
-            read_scores[read_id]['continuously_mapped'] += continuously_mapped
+        elif aln_score > best_alignments[read_id]['score']:
+            best_alignments[read_id] = {
+                'start': read_start,
+                'end': read_end,
+                'score': aln_score
+            }
     
     bam.close()
-    ref_fasta.close()
     
-    # Create per-read dataframe
+    # Calculate integrity scores for each read's best alignment
     per_read_data = []
-    for read_id, scores in read_scores.items():
-        # If any alignment had mismatch, continuously_mapped should be 0
-        cont_mapped = 0 if scores['has_mismatch'] else scores['continuously_mapped']
+    for read_id, aln_info in best_alignments.items():
+        mapped, continuously_mapped, is_full_length = calculate_read_integrity(
+            aln_info['start'], aln_info['end'],
+            itr1_end, itr2_start, inner_length
+        )
+        
         per_read_data.append({
             'read_id': read_id,
-            'mapped_score': scores['mapped'],
-            'continuously_mapped_score': cont_mapped,
+            'mapped_score': mapped,
+            'continuously_mapped_score': continuously_mapped,
+            'is_full_length': is_full_length,
             'sample_id': args.sample_id
         })
     
@@ -180,6 +163,7 @@ def main(args):
             'read_id': [],
             'mapped_score': [],
             'continuously_mapped_score': [],
+            'is_full_length': [],
             'sample_id': []
         })
     
@@ -189,6 +173,7 @@ def main(args):
     # Calculate summary
     total_mapped = df_per_read['mapped_score'].sum()
     total_continuously_mapped = df_per_read['continuously_mapped_score'].sum()
+    full_length_count = df_per_read['is_full_length'].sum() if not df_per_read.empty else 0
     
     if total_mapped > 0:
         percent_intact = round(total_continuously_mapped / total_mapped * 100, 2)
@@ -200,13 +185,15 @@ def main(args):
         'total_continuously_mapped': [int(total_continuously_mapped)],
         'percent_intact': [percent_intact],
         'total_reads': [len(df_per_read)],
+        'full_length_reads': [int(full_length_count)],
+        'inner_region_length': [inner_length],
         'sample_id': [args.sample_id]
     })
     
     df_summary.to_csv(args.summary_outfile, sep='\t', index=False)
     
-    # Also create distribution data for bar plots
-    # Mapped score distribution
+    # Create distribution data for line plots
+    # Mapped score distribution (frequency per score value)
     if not df_per_read.empty:
         mapped_counts = df_per_read['mapped_score'].value_counts().sort_index()
         total = len(df_per_read)
@@ -238,7 +225,7 @@ def main(args):
             'sample_id': []
         })
     
-    # Append distribution to summary file (or output separately)
+    # Output distribution file
     dist_outfile = args.summary_outfile.parent / (
         args.summary_outfile.stem + '_distribution.tsv')
     df_dist.to_csv(dist_outfile, sep='\t', index=False)
