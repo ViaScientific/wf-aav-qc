@@ -205,7 +205,7 @@ def plot_integrity(report, summary_file, per_read_file):
                     # Get per-read data for this sample
                     df_reads = df_per_read[df_per_read['sample_id'] == sample]
                     
-                    with Grid(columns=2):
+                    with Grid(columns=1):
                         # Mapped score distribution
                         if not df_reads.empty:
                             plt = ezc.histplot(
@@ -215,12 +215,12 @@ def plot_integrity(report, summary_file, per_read_file):
                             EZChart(plt, theme='epi2melabs', height='400px')
                         
                         # Continuously mapped score distribution
-                        if not df_reads.empty:
-                            plt = ezc.histplot(
-                                data=df_reads[['continuously_mapped_score']], binwidth=1)
-                            plt._fig.xaxis.axis_label = 'Continuously mapped length per read (bp)'
-                            plt._fig.yaxis.axis_label = 'Number of reads'
-                            EZChart(plt, theme='epi2melabs', height='400px')
+                        # if not df_reads.empty:
+                        #     plt = ezc.histplot(
+                        #         data=df_reads[['continuously_mapped_score']], binwidth=1)
+                        #     plt._fig.xaxis.axis_label = 'Continuously mapped length per read (bp)'
+                        #     plt._fig.yaxis.axis_label = 'Number of reads'
+                        #     EZChart(plt, theme='epi2melabs', height='400px')
 
 
 def plot_length_statistics(report, length_stats_file):
