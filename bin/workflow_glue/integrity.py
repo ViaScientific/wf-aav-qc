@@ -124,6 +124,11 @@ def main(args):
         read_start = aln.reference_start
         read_end = aln.reference_end
         
+        # Filter: only include reads CONTAINED within ITR-ITR region
+        # (same filter as truncations.py - exclude reads extending beyond ITRs)
+        if read_start <= itr1_start - 3 or read_end >= itr2_end + 3:
+            continue
+        
         # Keep only the best alignment per read
         if read_id not in best_alignments:
             best_alignments[read_id] = {
