@@ -72,7 +72,7 @@ def calculate_read_integrity(read_start, read_end, itr1_end, itr2_start, inner_l
     :return: tuple (mapped_score, continuously_mapped_score, is_full_length)
     """
     # Check if full-length: starts within/before ITR1 and ends within/after ITR2
-    is_full_length = (read_start <= itr1_end) and (read_end >= itr2_start)
+    is_full_length = (read_start < itr1_end) and (read_end > itr2_start)
     
     if is_full_length:
         # Full-length reads get the constant inner_length for both scores
