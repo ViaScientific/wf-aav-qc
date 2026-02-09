@@ -120,15 +120,8 @@ process make_combined_reference {
     script:
     def refs_in_dir = params.non_transgene_refs ? true:false
     """
-    echo $refs_in_dir
-    if [ "$refs_in_dir" != "true" ]; then
-        # Ref files will be individual file paths
-        refs=\$(find non_transgene_refs/*)
-    else
-        # Ref files will be in a subdirectory
-        refdir=\$(find non_transgene_refs/*)
-        refs=\$(find \$refdir/*)
-    fi
+    # Find all FASTA reference files recursively (works for any directory structure)
+    refs=\$(find non_transgene_refs -type f \\( -name "*.fa" -o -name "*.fasta" -o -name "*.fa.gz" -o -name "*.fasta.gz" \\))
 
     echo \$refs
 
