@@ -770,8 +770,9 @@ workflow {
             // Hybrid mode: folder for helper/rep-cap + separate host plasmid
             log.info("Using non-transgene refs from folder '${params.non_transgene_refs}' with separate host reference '${params.ref_host}'")
             ref_host = file(params.ref_host, checkIfExists: true)
-            folder_files = file("${params.non_transgene_refs}/**/*.{fa,fasta,fa.gz,fasta.gz}", checkIfExists: false)
-            non_transgene_refs = Channel.of(folder_files + [ref_host]).flatten().collect()
+            non_transgene_refs = Channel.fromPath("${params.non_transgene_refs}/**")
+                .mix(Channel.of(ref_host))
+                .collect()
         } else {
             non_transgene_refs = file(params.non_transgene_refs, checkIfExists: true)
         }
