@@ -762,9 +762,20 @@ workflow {
     }
 
      // It's possible to supply any number of reference files in a folder, but we allow specifying individual
-     // hist, rep-cap and helper plasmid for backwards compatibility.
+     // host, rep-cap and helper plasmid for backwards compatibility.
+     // Additionally, ref_host can be provided separately alongside a non_transgene_refs folder
+     // to avoid duplicating large host genome files across multiple sample folders.
     if (params.non_transgene_refs){
-        non_transgene_refs = file(params.non_transgene_refs, checkIfExists: true)
+        if (params.ref_host){
+            // Hybrid mode: folder for helper/rep-cap + separate host plasmid
+            log.info("Using non-transgene refs from folder '${params.non_transgene_refs}' with separate host reference '${params.ref_host}'")
+            ref_host = file(params.ref_host, checkIfExists: true)
+            non_transgene_refs = Channel.fromPath("${params.non_transgene_refs}/**")
+                .mix(Channel.of(ref_host))
+                .collect()
+        } else {
+            non_transgene_refs = file(params.non_transgene_refs, checkIfExists: true)
+        }
     }
     else{
         ref_host = file(params.ref_host, checkIfExists: true)

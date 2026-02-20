@@ -139,7 +139,7 @@
                     ]
                 },
               {
-                    "oneOf": [
+                    "anyOf": [
                         {
                             "required": [
                                 "non_transgene_refs"
