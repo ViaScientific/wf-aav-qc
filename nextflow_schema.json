@@ -105,11 +105,23 @@
                     "format": "file-path",
                     "description": "The rep/cap plasmid FASTA file."
                 },
-                "non_transgene_refs": {
-                    "title": "Non-transgene reference files",
+                "plasmid1": {
+                    "title": "Additional plasmid 1",
                     "type": "string",
-                    "format": "directory-path",
-                    "description": "A path to a folder containing reference sequences for all non-transgene plasmid sequences."
+                    "format": "file-path",
+                    "description": "An optional additional non-transgene plasmid FASTA file."
+                },
+                "plasmid2": {
+                    "title": "Additional plasmid 2",
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "An optional additional non-transgene plasmid FASTA file."
+                },
+                "plasmid3": {
+                    "title": "Additional plasmid 3",
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "An optional additional non-transgene plasmid FASTA file."
                 },
                 "ref_transgene_plasmid": {
                     "title": "Transgene plasmid",
@@ -134,22 +146,6 @@
                         {
                             "required": [
                                 "bam"
-                            ]
-                        }
-                    ]
-                },
-              {
-                    "anyOf": [
-                        {
-                            "required": [
-                                "non_transgene_refs"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "ref_host",
-                                "ref_helper",
-                                "ref_rep_cap"
                             ]
                         }
                     ]
@@ -299,7 +295,6 @@
                     "format": "directory-path",
                     "hidden": true
                 }
-
             }
         }
     },

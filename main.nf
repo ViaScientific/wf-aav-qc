@@ -118,7 +118,7 @@ process make_combined_reference {
           path "reference_ids.json",
                 emit: ref_ids_json
     script:
-    def refs_in_dir = params.non_transgene_refs ? true:false
+
     """
     # Find all FASTA reference files recursively (works for any directory structure)
     refs=\$(find non_transgene_refs -type f \\( -name "*.fa" -o -name "*.fasta" -o -name "*.fa.gz" -o -name "*.fasta.gz" \\))
@@ -761,28 +761,18 @@ workflow {
         ])
     }
 
-     // It's possible to supply any number of reference files in a folder, but we allow specifying individual
-     // host, rep-cap and helper plasmid for backwards compatibility.
-     // Additionally, ref_host can be provided separately alongside a non_transgene_refs folder
-     // to avoid duplicating large host genome files across multiple sample folders.
-    if (params.non_transgene_refs){
-        if (params.ref_host){
-            // Hybrid mode: folder for helper/rep-cap + separate host plasmid
-            log.info("Using non-transgene refs from folder '${params.non_transgene_refs}' with separate host reference '${params.ref_host}'")
-            ref_host = file(params.ref_host, checkIfExists: true)
-            non_transgene_refs = Channel.fromPath("${params.non_transgene_refs}/**")
-                .mix(Channel.of(ref_host))
-                .collect()
-        } else {
-            non_transgene_refs = file(params.non_transgene_refs, checkIfExists: true)
-        }
-    }
-    else{
-        ref_host = file(params.ref_host, checkIfExists: true)
-        ref_helper = file(params.ref_helper, checkIfExists: true)
-        ref_rep_cap = file(params.ref_rep_cap, checkIfExists: true)
-        non_transgene_refs = Channel.of([ref_host, ref_helper, ref_rep_cap])
-    }
+     // Collect all provided non-transgene plasmid references into a single channel.
+     // All are optional — provide any combination needed for your experiment.
+     def non_transgene_files = []
+     ['ref_host', 'ref_helper', 'ref_rep_cap', 'plasmid1', 'plasmid2', 'plasmid3'].each { param_name ->
+         if (params[param_name]) {
+             non_transgene_files.add(file(params[param_name], checkIfExists: true))
+         }
+     }
+     if (non_transgene_files.size() == 0) {
+         log.warn("No non-transgene plasmid references provided. The pipeline will only use the transgene plasmid.")
+     }
+     non_transgene_refs = Channel.of(non_transgene_files)
 
     // Get the ITR positions
     def itr_locs = [:]
