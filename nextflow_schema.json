@@ -15,6 +15,17 @@
             "fa_icon": "fas fa-arrow-right",
             "description": "Parameters for finding and handling input data for analysis.",
             "properties": {
+                "genome_build": {
+                    "title": "Genome build",
+                    "type": "string",
+                    "default": "custom",
+                    "description": "Select the genome build to use for the analysis.",
+                    "enum": [
+                        "human_hg38_AAV2",
+                        "test",
+                        "custom"
+                    ]
+                },
                 "fastq": {
                     "type": "string",
                     "format": "path",
