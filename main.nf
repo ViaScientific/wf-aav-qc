@@ -761,15 +761,6 @@ workflow {
         ])
     }
 
-    //* autofill
-    if (params.host_organism == "Human"){
-        params.ref_host = "s3://dev-rdu-imaging-s3-reports-us-east-1-914979267254/runs/run64/uploads/hg38_Ch38.p14Unpaired.fasta"
-    }
-    if (params.host_organism == "Test"){
-        params.ref_host = "gs://viafoundry-clt-viascientific-10001f58/run_data/biodev/mustafa/wf-aav-qc-demo/cell_line.fasta.gz"
-    }
-    //* autofill
-
      // Collect all provided non-transgene plasmid references into a single channel.
      // All are optional — provide any combination needed for your experiment.
      def non_transgene_files = []
